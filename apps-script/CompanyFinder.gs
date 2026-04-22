@@ -1,45 +1,47 @@
 /**
- * Agent 1 — Company Finder
- * ==========================
- * Searches web for 20 new Taiwanese mid-size companies per week.
- * Deduplicates against existing sheets.
- * Never fabricates emails — blank email → Needs Human Review.
- * Sends confirmed list to user for approval before any emails go out.
+ * YIT PR Agent v2 — Company Finder
+ * ===================================
+ * Every Monday: search for 20 new Taiwanese mid-size companies.
+ * Saves them to LEADS (or Needs Human Review).
+ * Emails the user a list for approval BEFORE any cold emails go out.
+ *
+ * The user replies "確認" to the approval email → run sendEmailsJob() manually
+ * (or it runs automatically each Monday after the approval window).
  */
-
-// Search queries are now loaded from the Settings sheet at runtime.
-// Edit them in your Google Sheet → Settings tab (SEARCH_QUERY_1 … SEARCH_QUERY_N).
-// Fallback defaults live in Config.gs.
 
 function runWeeklyFinder() {
   const cfg = getConfig();
   console.log('CompanyFinder: weekly run started');
 
-  const existingEmails = getAllKnownEmails_(cfg);
-  const candidates     = searchCompanies_(cfg, existingEmails);
-  const { verified, needsReview } = deduplicateCompanies_(candidates, existingEmails, cfg.WEEKLY_TARGET);
+  // 1. Collect all known emails to avoid duplicates
+  const knownEmails = sheetsGetAllEmails(SHEET.LEADS);
+  sheetsGetAllEmails(SHEET.REVIEW).forEach(e => knownEmails.add(e));
 
-  saveToSheets_(verified, needsReview, cfg);
-  sendConfirmationEmail_(verified, needsReview, cfg);
+  // 2. Search and parse candidates
+  const candidates = searchCompanies_(cfg, knownEmails);
+
+  // 3. Split into verified vs needs-review
+  const { verified, needsReview } = classifyCandidates_(candidates, knownEmails, cfg.WEEKLY_TARGET);
+
+  // 4. Save to sheets
+  verified.forEach(r => leadsAppend({
+    name: r.name, email: r.email, website: r.website,
+    status: STATUS.FOUND, source: 'Company Finder',
+  }));
+  needsReview.forEach(r => reviewAppend({
+    name: r.name, email: r.email || '', website: r.website,
+    reviewReason: r.reviewReason,
+  }));
+
+  // 5. Send approval email to user
+  sendApprovalEmail_(verified, needsReview, cfg);
 
   console.log(`CompanyFinder: ${verified.length} verified, ${needsReview.length} flagged for review`);
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
-function getAllKnownEmails_(cfg) {
-  const known = new Set();
-  [cfg.CONTACTS_SHEET, cfg.LEADS_SHEET].forEach(name => {
-    try {
-      sheetsGetAllEmails(name).forEach(e => known.add(e));
-    } catch (err) {
-      console.warn(`Could not read sheet '${name}': ${err}`);
-    }
-  });
-  return known;
-}
-
-function searchCompanies_(cfg, excludeEmails) {
+function searchCompanies_(cfg, knownEmails) {
   const found     = [];
   const seenNames = new Set();
 
@@ -48,12 +50,12 @@ function searchCompanies_(cfg, excludeEmails) {
     try {
       const results = tavilySearch(query, 10);
       for (const r of results) {
-        const record = parseSearchResult_(r);
-        if (!record || seenNames.has(record.name)) continue;
-        if (!record.email || !excludeEmails.has(record.email.toLowerCase())) {
-          found.push(record);
-          seenNames.add(record.name);
-        }
+        const record = parseResult_(r);
+        if (!record) continue;
+        if (seenNames.has(record.name)) continue;
+        if (record.email && knownEmails.has(record.email.toLowerCase())) continue;
+        found.push(record);
+        seenNames.add(record.name);
       }
     } catch (err) {
       console.error(`Tavily search failed for "${query}": ${err}`);
@@ -62,59 +64,70 @@ function searchCompanies_(cfg, excludeEmails) {
   return found;
 }
 
-function parseSearchResult_(result) {
+function parseResult_(result) {
   const content = (result.content || '') + ' ' + (result.url || '');
-  const email   = extractEmail(content);
   const name    = extractTCCompanyName(content);
   if (!name) return null;
-  return { name, email, website: result.url || '' };
+  const email   = extractEmail(content);
+  return {
+    name,
+    email: email && !isGenericEmail(email) ? email : '',
+    website: result.url || '',
+  };
 }
 
-function deduplicateCompanies_(candidates, existingEmails, target) {
+function classifyCandidates_(candidates, knownEmails, target) {
   const verified    = [];
   const needsReview = [];
 
   for (const r of candidates) {
-    if (r.email && existingEmails.has(r.email.toLowerCase())) continue; // already known
+    if (r.email && knownEmails.has(r.email.toLowerCase())) continue; // double-check
     if (!r.email) {
-      needsReview.push({ ...r, reviewReason: 'email not found' });
-    } else if (!r.name) {
-      needsReview.push({ ...r, reviewReason: 'name unverifiable' });
+      needsReview.push({ ...r, reviewReason: '未找到電子郵件' });
     } else {
       verified.push(r);
     }
+    if (verified.length >= target) break;
   }
-  return { verified: verified.slice(0, target), needsReview };
+
+  // Any remaining candidates with no email also go to review
+  candidates.slice(verified.length).forEach(r => {
+    if (!r.email && !needsReview.find(x => x.name === r.name)) {
+      needsReview.push({ ...r, reviewReason: '未找到電子郵件' });
+    }
+  });
+
+  return { verified, needsReview };
 }
 
-function saveToSheets_(verified, needsReview, cfg) {
-  const today = todayString();
-  verified.forEach(r =>
-    sheetsAppendRow(cfg.LEADS_SHEET,
-      [r.name, r.email, r.website, STATUS.FOUND, today, '', '', '', '', '', ''])
-  );
-  needsReview.forEach(r =>
-    sheetsAppendRow(cfg.REVIEW_SHEET,
-      [r.name, r.email, r.website, STATUS.NEEDS_REVIEW, today, '', '', '', '', r.reviewReason, ''])
-  );
-}
+function sendApprovalEmail_(verified, needsReview, cfg) {
+  const subject = `[YIT] 每週贊助名單確認 — ${verified.length} 家公司待審核`;
 
-function sendConfirmationEmail_(verified, needsReview, cfg) {
-  const subject = `[YIT] 每週贊助名單確認 — ${verified.length} 家公司待您審核`;
   const lines = [
-    `本週找到 ${verified.length} 家驗證公司，${needsReview.length} 家需人工確認。`,
+    `本週找到 ${verified.length} 家企業，${needsReview.length} 家需人工確認。`,
     '',
-    '請回覆此郵件「確認」以授權發送冷郵件，或「跳過」跳過本週。',
-    '（未在週三前回覆將自動跳過本週。）',
+    '請確認後手動執行 sendEmailsJob() 以發送冷郵件，或等下週自動執行。',
+    '（您可以在發送前直接編輯 LEADS 表格中的資料。）',
     '',
     '── 待發送名單 ──',
-    ...verified.map((r, i) => `${i + 1}. ${r.name} | ${r.email} | ${r.website}`),
+    ...verified.map((r, i) =>
+      `${i + 1}. ${r.name} | ${r.email} | ${r.website}`
+    ),
   ];
 
   if (needsReview.length) {
     lines.push('', '── 需人工確認（未寄信）──');
-    needsReview.forEach(r => lines.push(`- ${r.name} | ${r.website} | 原因: ${r.reviewReason}`));
+    needsReview.forEach(r =>
+      lines.push(`- ${r.name} | ${r.website || '無網址'} | 原因: ${r.reviewReason}`)
+    );
+    lines.push('', '請至 "Needs Human Review" 表格補充電子郵件後，手動移至 LEADS 表格。');
   }
 
+  lines.push(
+    '',
+    `查看表格: https://docs.google.com/spreadsheets/d/${cfg.SPREADSHEET_ID}`
+  );
+
   gmailSend(cfg.USER_EMAIL, subject, lines.join('\n'));
+  console.log(`CompanyFinder: approval email sent to ${cfg.USER_EMAIL}`);
 }

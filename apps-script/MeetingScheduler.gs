@@ -1,100 +1,77 @@
 /**
- * Agent 5 — Meeting Scheduler
- * ============================
- * proposeSlots()  — checks calendar, emails user available options (BCC'd)
- * bookMeeting()   — creates calendar event + sends invite, after user confirms
+ * YIT PR Agent v2 — Meeting Scheduler
+ * ======================================
+ * Books a confirmed meeting on Google Calendar after the sponsor confirms a slot.
  *
- * All times shown in Taiwan time (UTC+8) in user-facing emails.
- * Never books without explicit user confirmation.
+ * Flow:
+ *   1. EmailReader detects "wants_meeting" → creates draft with 3 slots
+ *   2. Sponsor replies confirming a slot
+ *   3. EmailReader detects "propose_time" → notifies Eric + Chanel
+ *   4. Team manually calls bookMeeting() to create the Calendar event
+ *
+ * previewFreeSlots() — call from editor to inspect available times.
+ * bookMeeting()      — call after the sponsor confirms a time.
  */
 
 /**
- * Check calendar and email user with available slots. Does NOT book.
- * Call this when a sponsor has expressed interest and you want to schedule.
+ * Book a confirmed meeting on Google Calendar.
+ * Sends calendar invite to sponsor, Eric, and Chanel.
  *
- * @param {string} companyName
- * @param {string} companyEmail
- * @param {number} rowNum - 1-based row number in leads sheet
+ * @param {string} companyName  Display name for the event
+ * @param {string} sponsorEmail Sponsor's email
+ * @param {Date}   startDate    Meeting start
+ * @param {Date}   endDate      Meeting end (optional — defaults to start + 30 min)
  */
-function proposeSlots(companyName, companyEmail, rowNum) {
-  const cfg   = getConfig();
-  const slots = calendarGetFreeSlots(3); // up to 3 options
-
-  if (!slots.length) {
-    notifyNoSlots_(companyName, cfg);
-    return;
+function bookMeeting(companyName, sponsorEmail, startDate, endDate) {
+  if (!endDate) {
+    endDate = new Date(startDate.getTime() + 30 * 60_000);
   }
 
-  const subject = `[YIT] 請確認與 ${companyName} 的會議時間`;
-  const lines = [
-    `贊助商 ${companyName} 已表示有興趣，請選擇一個會議時段：`,
-    '',
-    ...slots.map((slot, i) => `選項 ${i + 1}: ${formatToTaiwanTime(slot.start)}`),
-    '',
-    '請回覆選項編號（例如「選項 1」）或指定其他時間。',
-    '確認後系統將自動建立行事曆邀請並通知對方。',
-    '',
-    `贊助商 email: ${companyEmail}`,
-    `Sheet row: ${rowNum}`,
-    '',
-    '── 可用時段（供系統使用）──',
-    ...slots.map(slot => `START=${slot.start.toISOString()} END=${slot.end.toISOString()}`),
-  ];
+  const title = `YIT × ${companyName} — 贊助洽談`;
+  const event  = calendarCreateEvent(title, startDate, endDate, sponsorEmail);
 
-  gmailSend(cfg.USER_EMAIL, subject, lines.join('\n'), { bcc: cfg.BCC_EMAILS });
-  console.log(`MeetingScheduler: proposed ${slots.length} slot(s) for ${companyName}`);
+  const cfg    = getConfig();
+  const twStart = formatToTaiwanTime(startDate);
+
+  // Update LEADS sheet
+  const lead = sheetsFindRowByEmail(SHEET.LEADS, sponsorEmail);
+  if (lead) {
+    sheetsUpdateCells(SHEET.LEADS, lead.rowNum, [
+      [COL.MEETING_DATETIME, twStart],
+      [COL.STATUS,           STATUS.MEETING_SCHED],
+    ]);
+  }
+
+  // Notify Eric + Chanel
+  const subject = `[YIT] 會議已確認：${companyName} — ${twStart}`;
+  const body = [
+    `會議標題：${title}`,
+    `時間：${twStart}`,
+    `贊助商：${companyName} <${sponsorEmail}>`,
+    ``,
+    `Google Calendar 連結：${event.htmlLink}`,
+    ``,
+    `已邀請：${sponsorEmail}、${cfg.NOTIFY_ERIC}、${cfg.NOTIFY_CHANEL}`,
+  ].join('\n');
+
+  gmailSend(cfg.NOTIFY_ERIC,   subject, body);
+  gmailSend(cfg.NOTIFY_CHANEL, subject, body);
+
+  console.log(`MeetingScheduler: booked "${title}" at ${twStart}`);
+  console.log(`  Calendar: ${event.htmlLink}`);
+  return event;
 }
 
 /**
- * Create calendar event and notify user. Only call after user confirms a slot.
- *
- * @param {string} companyName
- * @param {string} companyEmail
- * @param {number} rowNum
- * @param {Date|string} startDate - JS Date or ISO string
- * @param {Date|string} endDate
+ * Preview available meeting slots — call from the Apps Script editor.
+ * Shows the next 3 free slots (on 3 different days) in Taiwan time.
  */
-function bookMeeting(companyName, companyEmail, rowNum, startDate, endDate) {
-  const cfg   = getConfig();
-  const start = startDate instanceof Date ? startDate : new Date(startDate);
-  const end   = endDate   instanceof Date ? endDate   : new Date(endDate);
-
-  const event = calendarCreateEvent(
-    `Meeting with ${companyName} - Sponsorship Discussion`,
-    start, end, companyEmail
-  );
-
-  // Update sheet
-  const sheetName = cfg.LEADS_SHEET;
-  sheetsUpdateCell(sheetName, rowNum, COL.STATUS, STATUS.MEETING_SCHED);
-  sheetsUpdateCell(sheetName, rowNum, COL.MEETING_DATETIME, start.toISOString());
-
-  // Notify user
-  const subject = `[YIT] 會議已確認 — ${companyName}`;
-  const body = [
-    `與 ${companyName} 的會議已建立。`,
-    '',
-    `時間: ${formatToTaiwanTime(start)}`,
-    `贊助商 email: ${companyEmail}`,
-    `行事曆連結: ${event.htmlLink}`,
-  ].join('\n');
-
-  gmailSend(cfg.USER_EMAIL, subject, body, { bcc: cfg.BCC_EMAILS });
-  console.log(`MeetingScheduler: meeting booked with ${companyName} at ${start.toISOString()}`);
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function notifyNoSlots_(companyName, cfg) {
-  const startTW = computeTaiwanHour(cfg.MEETING_START_HOUR_UK);
-  const endTW   = computeTaiwanHour(cfg.MEETING_END_HOUR_UK);
-
-  const subject = `[YIT] 本週無空檔 — ${companyName}`;
-  const body = [
-    `系統在 ${cfg.DAYS_AHEAD_MIN}-${cfg.DAYS_AHEAD_MAX} 天內找不到可用的會議時段`,
-    `（週一至週五 ${String(startTW).padStart(2,'0')}:00–${String(endTW).padStart(2,'0')}:00 台灣時間）。`,
-    `請手動查看行事曆並與 ${companyName} 協調時間。`,
-  ].join('\n');
-
-  gmailSend(cfg.USER_EMAIL, subject, body, { bcc: cfg.BCC_EMAILS });
+function previewFreeSlots() {
+  const slots = calendarGetFreeSlots(3);
+  if (!slots.length) {
+    console.log('No free slots found in the configured window. Check DAYS_AHEAD_MIN/MAX and meeting hours in Settings.');
+    return;
+  }
+  console.log(`Found ${slots.length} free slot(s) (Taiwan time):`);
+  slots.forEach((s, i) => console.log(`  ${i + 1}. ${s.twDisplay}`));
 }
