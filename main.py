@@ -13,6 +13,21 @@ Schedules and coordinates all agents:
 
 Manual (user-triggered via MeetingSchedulerAgent):
     5. MeetingSchedulerAgent.propose_slots()  — emails user with available slots
+
+SETUP STEPS (run once before starting):
+  1. cp .env.example .env
+     Fill in:  USER_EMAIL, ANTHROPIC_API_KEY, TAVILY_API_KEY
+               SENDER_NAME, SENDER_TITLE, SENDER_PHONE (optional), PDF_LINK (optional)
+  2. Download OAuth credentials from Google Cloud Console:
+       APIs & Services → Credentials → OAuth 2.0 Client ID (Desktop app) → download JSON
+       Save as: credentials/oauth_credentials.json
+     Enable APIs: Gmail API, Google Calendar API, Google Sheets API, Google Drive API
+  3. python setup.py
+       Opens browser to authorize Google APIs, creates the Google Spreadsheet,
+       writes SPREADSHEET_ID back into .env automatically.
+  4. Open the spreadsheet → YIT_Context tab → fill in YIT program facts
+       (The Reply Drafter uses this data to answer sponsor questions — keep it accurate!)
+  5. python main.py   (starts the scheduler)
     6. MeetingSchedulerAgent.book_meeting()   — creates calendar event after user confirms
 
 Setup (run once before starting the scheduler):
