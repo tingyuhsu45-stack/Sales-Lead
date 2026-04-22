@@ -9,9 +9,38 @@
 // SHEETS SERVICE
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Open a sheet by name.
+ * Reads SPREADSHEET_ID directly from Script Properties to avoid circular
+ * dependency (getConfig → getSettings → getSheet_ → getConfig).
+ */
 function getSheet_(name) {
-  const cfg = getConfig();
-  return SpreadsheetApp.openById(cfg.SPREADSHEET_ID).getSheetByName(name);
+  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID')
+    || '1XXYQUgbe11jYj2tMiEYlP3kaiv3xVA0JIim2dwwAiGE';
+  return SpreadsheetApp.openById(id).getSheetByName(name);
+}
+
+/**
+ * Read the Settings sheet and return a key → value map.
+ * Column A = Key, Column B = Value (user editable), Column C = Description.
+ * Returns {} if sheet is missing or unreadable.
+ */
+function getSettings() {
+  try {
+    const sheet = getSheet_('Settings');
+    if (!sheet) return {};
+    const rows = sheet.getDataRange().getValues().slice(1); // skip header
+    const out  = {};
+    rows.forEach(row => {
+      const key = (row[0] || '').toString().trim();
+      const val = (row[1] !== undefined && row[1] !== '') ? row[1].toString().trim() : null;
+      if (key && val !== null) out[key] = val;
+    });
+    return out;
+  } catch (err) {
+    console.warn('getSettings: could not read Settings sheet —', err);
+    return {};
+  }
 }
 
 /** Returns all data rows (skips header row 1). Each row is an array of values. */

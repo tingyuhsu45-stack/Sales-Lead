@@ -7,12 +7,9 @@
  * Sends confirmed list to user for approval before any emails go out.
  */
 
-const SEARCH_QUERIES = [
-  '台灣中型企業 企業社會責任 贊助 聯絡信箱 官方網站',
-  '台灣中小企業 官方網站 企業聯絡 電子郵件',
-  'Taiwan mid-size company sponsorship CSR contact email site:com.tw',
-  '台灣科技公司 中小企業 聯絡我們 電子郵件',
-];
+// Search queries are now loaded from the Settings sheet at runtime.
+// Edit them in your Google Sheet → Settings tab (SEARCH_QUERY_1 … SEARCH_QUERY_N).
+// Fallback defaults live in Config.gs.
 
 function runWeeklyFinder() {
   const cfg = getConfig();
@@ -46,7 +43,7 @@ function searchCompanies_(cfg, excludeEmails) {
   const found     = [];
   const seenNames = new Set();
 
-  for (const query of SEARCH_QUERIES) {
+  for (const query of cfg.SEARCH_QUERIES) {
     if (found.length >= cfg.WEEKLY_TARGET * 2) break;
     try {
       const results = tavilySearch(query, 10);
