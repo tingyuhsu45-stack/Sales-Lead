@@ -20,8 +20,18 @@ EXISTING_CONTACTS_SHEET_NAME = os.environ.get("EXISTING_CONTACTS_SHEET_NAME", "è
 HUMAN_REVIEW_SHEET_NAME = os.environ.get("HUMAN_REVIEW_SHEET_NAME", "Needs Human Review")
 USER_EMAIL = os.environ["USER_EMAIL"]
 TIMEZONE_UK = os.environ.get("TIMEZONE_UK", "Europe/London")
+TIMEZONE_TW = os.environ.get("TIMEZONE_TW", "Asia/Taipei")
 MEETING_START_HOUR_UK = int(os.environ.get("MEETING_START_HOUR_UK", "7"))
 MEETING_END_HOUR_UK = int(os.environ.get("MEETING_END_HOUR_UK", "11"))
+MEETING_DAYS_AHEAD_MIN = int(os.environ.get("MEETING_DAYS_AHEAD_MIN", "3"))
+MEETING_DAYS_AHEAD_MAX = int(os.environ.get("MEETING_DAYS_AHEAD_MAX", "7"))
+BCC_EMAILS: list[str] = [
+    e.strip()
+    for e in os.environ.get(
+        "BCC_EMAILS", "tingyuhsu45@gmail.com,chanelhwung94@gmail.com"
+    ).split(",")
+    if e.strip()
+]
 WEEKLY_TARGET = int(os.environ.get("WEEKLY_TARGET", "20"))
 
 # Sender identity for email template

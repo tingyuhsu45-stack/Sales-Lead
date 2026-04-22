@@ -26,7 +26,8 @@ def test_proposes_slots_sends_options_to_user():
     assert mock_gmail.send_email.called
     body = mock_gmail.send_email.call_args.kwargs["body"]
     assert "公司甲" in body
-    assert "09:00" in body or "2026-04-08" in body
+    # Slot 2026-04-08T09:00:00+01:00 → 16:00 Taiwan time
+    assert "16:00" in body or "2026-04-08" in body
 
 
 def test_no_slots_sends_unavailability_notice():
@@ -40,8 +41,8 @@ def test_no_slots_sends_unavailability_notice():
 
     assert mock_gmail.send_email.called
     body = mock_gmail.send_email.call_args.kwargs["body"]
-    # Body should mention the time window or hours — confirms it's the "no slots" message
-    assert "07:00" in body or "2-7" in body or "UK" in body
+    # Body should mention Taiwan time window — confirms it's the "no slots" message
+    assert "台灣" in body or "3-7" in body or "14:00" in body or "15:00" in body
     # Must NOT book any event
     mock_calendar.create_event.assert_not_called()
 

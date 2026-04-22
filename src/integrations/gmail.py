@@ -13,12 +13,21 @@ class GmailClient:
     def __init__(self):
         self._service = build_gmail_service()
 
-    def send_email(self, to: str, subject: str, body: str, html: bool = False) -> str:
+    def send_email(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html: bool = False,
+        bcc: list[str] | None = None,
+    ) -> str:
         """Send an email. Set html=True for HTML body. Returns message ID."""
         mime_type = "html" if html else "plain"
         message = MIMEText(body, mime_type, "utf-8")
         message["to"] = to
         message["subject"] = subject
+        if bcc:
+            message["Bcc"] = ", ".join(bcc)
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
         sent = (
             self._service.users()

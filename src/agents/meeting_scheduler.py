@@ -32,7 +32,9 @@ class MeetingSchedulerAgent:
     ) -> None:
         """Check calendar and email user with available slot options. Does NOT book."""
         slots = self._calendar.get_free_slots(
-            days_ahead_min=2, days_ahead_max=7, max_slots=3
+            days_ahead_min=config.MEETING_DAYS_AHEAD_MIN,
+            days_ahead_max=config.MEETING_DAYS_AHEAD_MAX,
+            max_slots=3,
         )
 
         if not slots:
@@ -64,6 +66,7 @@ class MeetingSchedulerAgent:
             to=config.USER_EMAIL,
             subject=subject,
             body="\n".join(lines),
+            bcc=config.BCC_EMAILS,
         )
 
     def book_meeting(
@@ -100,20 +103,26 @@ class MeetingSchedulerAgent:
             f"贊助商 email: {company_email}\n"
             f"行事曆連結: {event.get('htmlLink', '(請查看 Google Calendar)')}"
         )
-        self._gmail.send_email(to=config.USER_EMAIL, subject=subject, body=body)
+        self._gmail.send_email(to=config.USER_EMAIL, subject=subject, body=body, bcc=config.BCC_EMAILS)
         logger.info(f"Meeting scheduled with {company_name} at {start_iso}")
 
     def _notify_no_slots(self, company_name: str) -> None:
+        # Compute meeting window in Taiwan time dynamically (handles BST/GMT shifts)
+        tw = ZoneInfo(config.TIMEZONE_TW)
+        now = datetime.now(tz=ZoneInfo(config.TIMEZONE_UK))
+        start_tw = now.replace(hour=config.MEETING_START_HOUR_UK, minute=0, second=0, microsecond=0).astimezone(tw).hour
+        end_tw = now.replace(hour=config.MEETING_END_HOUR_UK, minute=0, second=0, microsecond=0).astimezone(tw).hour
+
         subject = f"[YIT] 本週無空檔 — {company_name}"
         body = (
-            f"系統在 2-7 天內找不到可用的會議時段（週一至週五 "
-            f"{config.MEETING_START_HOUR_UK:02d}:00–{config.MEETING_END_HOUR_UK:02d}:00 UK 時間）。\n"
+            f"系統在 {config.MEETING_DAYS_AHEAD_MIN}-{config.MEETING_DAYS_AHEAD_MAX} 天內找不到可用的會議時段"
+            f"（週一至週五 {start_tw:02d}:00–{end_tw:02d}:00 台灣時間）。\n"
             f"請手動查看行事曆並與 {company_name} 協調時間。"
         )
-        self._gmail.send_email(to=config.USER_EMAIL, subject=subject, body=body)
+        self._gmail.send_email(to=config.USER_EMAIL, subject=subject, body=body, bcc=config.BCC_EMAILS)
 
 
 def _format_slot(iso: str) -> str:
-    """Format an ISO datetime string to a human-readable UK time string."""
-    dt = datetime.fromisoformat(iso).astimezone(ZoneInfo(config.TIMEZONE_UK))
-    return dt.strftime("%Y-%m-%d %A %H:%M UK time")
+    """Format an ISO datetime string to Taiwan time (UTC+8)."""
+    dt = datetime.fromisoformat(iso).astimezone(ZoneInfo(config.TIMEZONE_TW))
+    return dt.strftime("%Y-%m-%d %A %H:%M 台灣時間")

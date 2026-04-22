@@ -81,11 +81,16 @@ class CalendarClient:
         attendee_email: str,
     ) -> dict:
         """Create a Google Calendar event with a Meet link and email invite. Returns event dict."""
+        # Primary attendee + BCC contacts as optional attendees so they get the invite
+        attendees = [{"email": attendee_email}]
+        for bcc_email in config.BCC_EMAILS:
+            attendees.append({"email": bcc_email, "optional": True})
+
         event_body = {
             "summary": summary,
             "start": {"dateTime": start_iso, "timeZone": config.TIMEZONE_UK},
             "end": {"dateTime": end_iso, "timeZone": config.TIMEZONE_UK},
-            "attendees": [{"email": attendee_email}],
+            "attendees": attendees,
             "conferenceData": {
                 "createRequest": {
                     "requestId": f"yit-{start_iso}",

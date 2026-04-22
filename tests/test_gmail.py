@@ -17,6 +17,24 @@ def test_send_plain_email():
     assert result == "msg123"
 
 
+def test_send_email_includes_bcc_header():
+    mock_service = MagicMock()
+    mock_service.users().messages().send().execute.return_value = {"id": "bcc_id"}
+    client = make_client(mock_service)
+    client.send_email(
+        to="to@example.com",
+        subject="BCC Test",
+        body="Hello",
+        bcc=["bcc1@example.com", "bcc2@example.com"],
+    )
+    # Decode raw message and verify Bcc header is present
+    send_call = mock_service.users().messages().send.call_args
+    raw = send_call.kwargs["body"]["raw"]
+    decoded = base64.urlsafe_b64decode(raw).decode("utf-8", errors="replace")
+    assert "bcc1@example.com" in decoded
+    assert "bcc2@example.com" in decoded
+
+
 def test_send_html_email():
     mock_service = MagicMock()
     mock_service.users().messages().send().execute.return_value = {"id": "msg456"}
