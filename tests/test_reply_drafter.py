@@ -4,10 +4,10 @@ from src import config
 from src.agents.reply_drafter import ReplyDrafterAgent
 
 
-def make_agent(mock_sheets, mock_gmail, mock_claude):
+def make_agent(mock_sheets, mock_gmail, mock_llm):
     with patch("src.agents.reply_drafter.SheetsClient", return_value=mock_sheets), \
          patch("src.agents.reply_drafter.GmailClient", return_value=mock_gmail), \
-         patch("src.agents.reply_drafter.anthropic.Anthropic", return_value=mock_claude):
+         patch("src.agents.reply_drafter.LLMClient", return_value=mock_llm):
         return ReplyDrafterAgent()
 
 
@@ -26,12 +26,10 @@ def test_sends_draft_to_user_not_sponsor():
     mock_sheets = MagicMock()
     mock_sheets.get_all_rows.return_value = [["Programs", "400+ students"]]
     mock_gmail = MagicMock()
-    mock_claude = MagicMock()
-    mock_claude.messages.create.return_value = MagicMock(
-        content=[MagicMock(text="感謝您的回覆...")]
-    )
+    mock_llm = MagicMock()
+    mock_llm.complete.return_value = "感謝您的回覆..."
 
-    agent = make_agent(mock_sheets, mock_gmail, mock_claude)
+    agent = make_agent(mock_sheets, mock_gmail, mock_llm)
     agent.run(_make_response())
 
     send_calls = mock_gmail.send_email.call_args_list
@@ -43,28 +41,26 @@ def test_draft_labelled_do_not_send():
     mock_sheets = MagicMock()
     mock_sheets.get_all_rows.return_value = [["Programs", "400+ students"]]
     mock_gmail = MagicMock()
-    mock_claude = MagicMock()
-    mock_claude.messages.create.return_value = MagicMock(
-        content=[MagicMock(text="Draft text")]
-    )
+    mock_llm = MagicMock()
+    mock_llm.complete.return_value = "Draft text"
 
-    agent = make_agent(mock_sheets, mock_gmail, mock_claude)
+    agent = make_agent(mock_sheets, mock_gmail, mock_llm)
     agent.run(_make_response())
 
     body = mock_gmail.send_email.call_args.kwargs["body"]
     assert "DRAFT" in body or "草稿" in body
 
 
-def test_empty_context_skips_claude_and_sends_raw():
+def test_empty_context_skips_llm_and_sends_raw():
     mock_sheets = MagicMock()
     mock_sheets.get_all_rows.return_value = []  # Empty YIT_Context
     mock_gmail = MagicMock()
-    mock_claude = MagicMock()
+    mock_llm = MagicMock()
 
-    agent = make_agent(mock_sheets, mock_gmail, mock_claude)
+    agent = make_agent(mock_sheets, mock_gmail, mock_llm)
     agent.run(_make_response())
 
-    mock_claude.messages.create.assert_not_called()
+    mock_llm.complete.assert_not_called()
     send_calls = mock_gmail.send_email.call_args_list
     assert len(send_calls) == 1
     body = send_calls[0].kwargs["body"]
@@ -75,35 +71,29 @@ def test_draft_contains_needs_human_input_placeholder():
     mock_sheets = MagicMock()
     mock_sheets.get_all_rows.return_value = [["Programs", "400+ students"]]
     mock_gmail = MagicMock()
-    mock_claude = MagicMock()
-    # Claude returns a draft with a [NEEDS HUMAN INPUT] marker
-    mock_claude.messages.create.return_value = MagicMock(
-        content=[MagicMock(text="[NEEDS HUMAN INPUT: budget question]")]
-    )
+    mock_llm = MagicMock()
+    # LLM returns a draft with a [NEEDS HUMAN INPUT] marker
+    mock_llm.complete.return_value = "[NEEDS HUMAN INPUT: budget question]"
 
-    agent = make_agent(mock_sheets, mock_gmail, mock_claude)
+    agent = make_agent(mock_sheets, mock_gmail, mock_llm)
     agent.run(_make_response(body="你們的預算是多少？"))
 
     body = mock_gmail.send_email.call_args.kwargs["body"]
     assert "NEEDS HUMAN INPUT" in body
 
 
-def test_claude_receives_yit_context_in_prompt():
+def test_llm_receives_yit_context_in_prompt():
     mock_sheets = MagicMock()
     mock_sheets.get_all_rows.return_value = [["Impact", "服務400位學生"]]
     mock_gmail = MagicMock()
-    mock_claude = MagicMock()
-    mock_claude.messages.create.return_value = MagicMock(
-        content=[MagicMock(text="reply")]
-    )
+    mock_llm = MagicMock()
+    mock_llm.complete.return_value = "reply"
 
-    agent = make_agent(mock_sheets, mock_gmail, mock_claude)
+    agent = make_agent(mock_sheets, mock_gmail, mock_llm)
     agent.run(_make_response())
 
-    call_kwargs = mock_claude.messages.create.call_args.kwargs
-    messages_str = str(call_kwargs.get("messages", ""))
-    system_str = str(call_kwargs.get("system", ""))
-    full_prompt = messages_str + system_str
+    call_kwargs = mock_llm.complete.call_args.kwargs
+    full_prompt = str(call_kwargs.get("system", "")) + str(call_kwargs.get("user", ""))
     assert "400" in full_prompt or "YIT" in full_prompt
 
 
@@ -111,12 +101,10 @@ def test_sheet_status_updated_to_reply_drafted():
     mock_sheets = MagicMock()
     mock_sheets.get_all_rows.return_value = [["Programs", "info"]]
     mock_gmail = MagicMock()
-    mock_claude = MagicMock()
-    mock_claude.messages.create.return_value = MagicMock(
-        content=[MagicMock(text="draft")]
-    )
+    mock_llm = MagicMock()
+    mock_llm.complete.return_value = "draft"
 
-    agent = make_agent(mock_sheets, mock_gmail, mock_claude)
+    agent = make_agent(mock_sheets, mock_gmail, mock_llm)
     agent.run(_make_response())
 
     all_args = [c.args for c in mock_sheets.update_cell.call_args_list]

@@ -3,8 +3,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TAVILY_API_KEY = os.environ["TAVILY_API_KEY"]
+
+# ── LLM provider (openai | anthropic | google) ─────────────────────────────
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
+LLM_API_KEY = os.environ.get(
+    "LLM_API_KEY",
+    os.environ.get("ANTHROPIC_API_KEY", ""),   # backward-compat alias
+)
+LLM_MODEL = os.environ.get("LLM_MODEL", "")   # empty → llm.py picks default
 GOOGLE_CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "credentials/oauth_credentials.json")
 GOOGLE_TOKEN_FILE = os.environ.get("GOOGLE_TOKEN_FILE", "credentials/token.json")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "")

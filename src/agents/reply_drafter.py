@@ -12,10 +12,9 @@ Anti-hallucination rules (hard):
 """
 import logging
 
-import anthropic
-
 from src import config
 from src.integrations.gmail import GmailClient
+from src.integrations.llm import LLMClient
 from src.integrations.sheets import SheetsClient
 
 logger = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class ReplyDrafterAgent:
     def __init__(self) -> None:
         self._sheets = SheetsClient()
         self._gmail = GmailClient()
-        self._claude = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+        self._llm = LLMClient()
 
     # ── Public entry point ────────────────────────────────────────────────────
 
@@ -84,13 +83,7 @@ class ReplyDrafterAgent:
             "Draft a reply. If any question cannot be answered from YIT_CONTEXT, "
             "insert [NEEDS HUMAN INPUT: <what was asked>]."
         )
-        resp = self._claude.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        return resp.content[0].text
+        return self._llm.complete(system=_SYSTEM_PROMPT, user=user_message)
 
     def _send_draft_to_user(self, response: dict, draft: str) -> None:
         subject = f"[YIT 草稿 — 待審核] 回覆 {response['company_name']}"
