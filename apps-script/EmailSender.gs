@@ -51,62 +51,61 @@ function runEmailSender() {
 
 function buildColdEmail_(companyName, cfg) {
   const senderName  = cfg.SENDER_NAME  || '徐廷宇';
-  const senderTitle = cfg.SENDER_TITLE || '商業經理';
-  const senderPhone = cfg.SENDER_PHONE ? `<br>電話：${cfg.SENDER_PHONE}` : '';
+  const senderTitle = cfg.SENDER_TITLE || '營運經理';
+  const senderPhone = cfg.SENDER_PHONE ? `電話：${cfg.SENDER_PHONE}\n` : '';
   const pdfLink     = cfg.PDF_LINK     || '';
 
-  const subject = `Youth Impact Taiwan — 贊助合作邀請`;
+  const subject = `邀請 ${companyName} 成為 Youth Impact Taiwan 教育夥伴`;
 
   const plain = [
-    `敬啟者，${companyName} 負責人您好，`,
+    `${companyName} 您好，`,
     ``,
-    `我是 Youth Impact Taiwan（YIT）的${senderTitle}${senderName}。`,
+    `我是 Youth Impact Taiwan (YIT) 的${senderTitle} ${senderName}。冒昧寫信給您，是希望能邀請貴會成為我們推動教育平等的夥伴。`,
     ``,
-    `Youth Impact Taiwan 是一個致力於連結台灣青年與全球機遇的非營利組織。我們每年舉辦多場培訓計畫、實習媒合與論壇活動，幫助台灣大學生發展國際視野與職場競爭力。`,
+    `在 YIT，我們看見的不只是偏鄉資源的缺口，還有青年世代改變社會的渴望。因此，我們搭建了一座橋樑，連結有抱負的青年志工與需要資源的偏鄉學童。`,
     ``,
-    `我們誠摯邀請 ${companyName} 成為我們的贊助夥伴。透過贊助，貴公司將能：`,
-    `- 提升品牌在台灣青年群體中的曝光度`,
-    `- 展現企業社會責任（CSR）的具體實踐`,
-    `- 優先接觸 YIT 優質學生資源，協助人才招募`,
+    `過去兩年，這股「青年影響青年」的正向循環已服務全台超過 400 位學生。我們在偏鄉英文成長營收穫了孩子們 97% 的超高滿意度。`,
     ``,
-    pdfLink ? `贊助方案說明書：${pdfLink}` : '',
+    `為了將這份影響力延續到 2026 年，我們正在尋找認同此理念的企業夥伴，透過贊助或物資協力的方式，讓我們能將資源投入在擴大服務範圍上。`,
     ``,
-    `期待能與貴公司進行進一步的洽談，請問您方便安排一個 30 分鐘的視訊簡報嗎？`,
+    `不知最近是否方便與您約 30 分鐘線上聊聊？我很希望能聽聽您的建議，並分享更多我們的故事。`,
     ``,
-    `敬祝商祺，`,
+    `非常期待有機會與您合作！`,
     ``,
-    `${senderName}`,
-    `${senderTitle}`,
-    `Youth Impact Taiwan`,
-    `youthimpacttw@gmail.com`,
-  ].filter(l => l !== null).join('\n');
+    `${senderName} ${senderTitle}`,
+    `青年啟航協會 | Youth Impact Taiwan`,
+    `官網：https://www.youthimpacttaiwan.com`,
+    senderPhone,
+    pdfLink ? `點此查看YIT年度報告書 (PDF)：${pdfLink}` : '',
+  ].filter(l => l !== null && l !== '').join('\n');
 
   const html = `<!DOCTYPE html>
 <html lang="zh-TW">
 <head><meta charset="UTF-8"></head>
-<body style="font-family:Arial,sans-serif;font-size:15px;color:#222;line-height:1.75;max-width:620px;margin:0 auto;padding:28px 24px;">
+<body style="font-family:Arial,sans-serif;font-size:15px;color:#222;line-height:1.85;max-width:620px;margin:0 auto;padding:28px 24px;">
 
-  <p>敬啟者，<strong>${companyName}</strong> 負責人您好，</p>
+  <p><strong>${companyName}</strong> 您好，</p>
 
-  <p>我是 <strong>Youth Impact Taiwan（YIT）</strong> 的${senderTitle} <strong>${senderName}</strong>。</p>
+  <p>我是 <strong>Youth Impact Taiwan (YIT)</strong> 的${senderTitle} <strong>${senderName}</strong>。冒昧寫信給您，是希望能邀請貴會成為我們推動教育平等的夥伴。</p>
 
-  <p>Youth Impact Taiwan 是一個致力於連結台灣青年與全球機遇的非營利組織。我們每年舉辦多場培訓計畫、實習媒合與論壇活動，幫助台灣大學生發展國際視野與職場競爭力。</p>
+  <p>在 YIT，我們看見的不只是偏鄉資源的缺口，還有青年世代改變社會的渴望。因此，我們搭建了一座橋樑，連結有抱負的青年志工與需要資源的偏鄉學童。</p>
 
-  <p>我們誠摯邀請 <strong>${companyName}</strong> 成為我們的贊助夥伴。透過贊助，貴公司將能：</p>
-  <ul style="padding-left:20px;">
-    <li>提升品牌在台灣青年群體中的曝光度</li>
-    <li>展現企業社會責任（CSR）的具體實踐</li>
-    <li>優先接觸 YIT 優質學生資源，協助人才招募</li>
-  </ul>
+  <p>過去兩年，這股「青年影響青年」的正向循環已服務全台超過 <strong>400 位學生</strong>。我們在偏鄉英文成長營收穫了孩子們 <strong>97% 的超高滿意度</strong>。</p>
 
-  ${pdfLink ? `<p><a href="${pdfLink}" style="color:#1a73e8;">贊助方案說明書（點此查看）</a></p>` : ''}
+  <p>為了將這份影響力延續到 2026 年，我們正在尋找認同此理念的企業夥伴，透過贊助或物資協力的方式，讓我們能將資源投入在擴大服務範圍上。</p>
 
-  <p>期待能與貴公司進行進一步的洽談，請問您方便安排一個 <strong>30 分鐘的視訊簡報</strong> 嗎？</p>
+  <p>不知最近是否方便與您約 <strong>30 分鐘線上聊聊</strong>？我很希望能聽聽您的建議，並分享更多我們的故事。</p>
+
+  <p>非常期待有機會與您合作！</p>
+
+  ${pdfLink ? `<p><a href="${pdfLink}" style="color:#1a73e8;">點此查看YIT年度報告書 (PDF)</a></p>` : ''}
 
   <hr style="border:none;border-top:1px solid #eee;margin:28px 0;">
-  <p style="font-size:13px;color:#666;">
-    <strong>${senderName}</strong><br>
-    ${senderTitle}，Youth Impact Taiwan${senderPhone}<br>
+  <p style="font-size:13px;color:#555;line-height:1.7;">
+    <strong>${senderName}</strong> ${senderTitle}<br>
+    青年啟航協會 | Youth Impact Taiwan<br>
+    官網：<a href="https://www.youthimpacttaiwan.com" style="color:#1a73e8;">www.youthimpacttaiwan.com</a><br>
+    ${cfg.SENDER_PHONE ? `電話：${cfg.SENDER_PHONE}<br>` : ''}
     <a href="mailto:youthimpacttw@gmail.com" style="color:#1a73e8;">youthimpacttw@gmail.com</a>
   </p>
 
