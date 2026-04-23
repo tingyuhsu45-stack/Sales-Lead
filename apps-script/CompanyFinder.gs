@@ -50,7 +50,7 @@ function searchCompanies_(cfg, knownEmails) {
     try {
       const results = tavilySearch(query, 10);
       for (const r of results) {
-        const record = parseResult_(r);
+        const record = parseResult_(r, cfg);
         if (!record) continue;
         if (seenNames.has(record.name)) continue;
         if (record.email && knownEmails.has(record.email.toLowerCase())) continue;
@@ -64,9 +64,9 @@ function searchCompanies_(cfg, knownEmails) {
   return found;
 }
 
-function parseResult_(result) {
+function parseResult_(result, cfg) {
   const content = (result.content || '') + ' ' + (result.url || '');
-  const name    = extractTCCompanyName(content);
+  const name    = extractTCCompanyNameAI_(content, cfg);
   if (!name) return null;
   const email   = extractEmail(content);
   return {
@@ -74,6 +74,25 @@ function parseResult_(result) {
     email: email && !isGenericEmail(email) ? email : '',
     website: result.url || '',
   };
+}
+
+/**
+ * Use the LLM to extract a Traditional Chinese company name from text.
+ * Falls back to regex if the LLM call fails.
+ */
+function extractTCCompanyNameAI_(content, cfg) {
+  try {
+    const system = `你是一個專門識別台灣繁體中文公司名稱的助理。
+從以下文字中找出台灣公司的正式繁體中文全名（例如：「台積電股份有限公司」、「鴻海精密工業股份有限公司」）。
+只輸出公司名稱，不要任何其他文字。如果找不到任何公司名稱，輸出空字串。`;
+    const result = llmComplete(system, content.slice(0, 1200)).trim();
+    if (result && result.length >= 2 && result !== '""' && result !== "''") {
+      return result;
+    }
+  } catch (err) {
+    console.warn(`extractTCCompanyNameAI_ LLM failed: ${err} — using regex fallback`);
+  }
+  return extractTCCompanyName(content);
 }
 
 function classifyCandidates_(candidates, knownEmails, target) {

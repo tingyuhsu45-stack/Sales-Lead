@@ -113,6 +113,9 @@ function runEmailReader() {
       const draftBody = draftReply_(companyName, body, threadHistory, intent, cfg);
       gmailCreateReplyDraft(threadId, fromEmail, subject, draftBody);
 
+      // Notify Eric of all client replies
+      notifyClientReply_(companyName, fromEmail, body, intent, cfg);
+
       sheetsUpdateCells(SHEET.LEADS, rowNum, [
         [COL.DRAFT_CREATED, todayString()],
         [COL.STATUS,        STATUS.DRAFT_CREATED],
@@ -304,6 +307,28 @@ function notifyMeetingInterest_(companyName, sponsorEmail, body, cfg) {
   gmailSend(cfg.NOTIFY_ERIC,   subject, msgBody);
   gmailSend(cfg.NOTIFY_CHANEL, subject, msgBody);
   console.log(`  Notified Eric + Chanel: ${companyName} wants a meeting`);
+}
+
+// ── Notify Eric of general client replies ────────────────────────────────────
+
+function notifyClientReply_(companyName, sponsorEmail, body, intent, cfg) {
+  const intentLabel = { 'general_reply': '一般回覆', 'decline': '婉拒' }[intent] || intent;
+  const subject = `[YIT] ${companyName} 來信 — ${intentLabel}`;
+  const msgBody = [
+    `贊助商 ${companyName}（${sponsorEmail}）有新的來信。`,
+    ``,
+    `意圖分類：${intentLabel}`,
+    ``,
+    `--- 來信內容 ---`,
+    body,
+    `--------------------`,
+    ``,
+    `系統已自動草擬回覆，請至 Gmail 草稿夾確認後發送。`,
+    `查看草稿：https://mail.google.com/mail/u/0/#drafts`,
+  ].join('\n');
+
+  gmailSend(cfg.NOTIFY_ERIC, subject, msgBody);
+  console.log(`  Notified Eric: ${companyName} replied (${intentLabel})`);
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

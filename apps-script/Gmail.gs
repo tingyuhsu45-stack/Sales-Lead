@@ -36,13 +36,14 @@ function gmailMarkAsRead(message) {
   message.markRead();
 }
 
-// ── Draft creation (in-thread reply) ─────────────────────────────────────────
+// ── Draft creation ────────────────────────────────────────────────────────────
 
 /**
- * Create a Gmail draft as a reply within an existing thread.
- * Uses the Gmail REST API via UrlFetchApp (GmailApp does not support draft creation).
+ * Create a Gmail draft reply using the built-in GmailApp (no REST API needed).
+ * The draft appears in your Drafts folder addressed to the sponsor,
+ * ready to review and send.
  *
- * @param {string} threadId    The Gmail thread ID
+ * @param {string} threadId    Gmail thread ID (kept for API compatibility, not used)
  * @param {string} toEmail     Recipient email (the sponsor)
  * @param {string} subject     Subject of the original email (Re: is prepended if needed)
  * @param {string} body        Plain-text body of the draft
@@ -51,59 +52,11 @@ function gmailMarkAsRead(message) {
 function gmailCreateReplyDraft(threadId, toEmail, subject, body, htmlBody) {
   const replySubject = subject.startsWith('Re:') ? subject : `Re: ${subject}`;
 
-  let mimeMessage;
-  if (htmlBody) {
-    // Multipart MIME for HTML + plain text fallback
-    const boundary = 'boundary_yit_' + Utilities.getUuid();
-    mimeMessage = [
-      `To: ${toEmail}`,
-      `Subject: ${replySubject}`,
-      `MIME-Version: 1.0`,
-      `Content-Type: multipart/alternative; boundary="${boundary}"`,
-      ``,
-      `--${boundary}`,
-      `Content-Type: text/plain; charset=utf-8`,
-      ``,
-      body,
-      ``,
-      `--${boundary}`,
-      `Content-Type: text/html; charset=utf-8`,
-      ``,
-      htmlBody,
-      ``,
-      `--${boundary}--`,
-    ].join('\r\n');
-  } else {
-    mimeMessage = [
-      `To: ${toEmail}`,
-      `Subject: ${replySubject}`,
-      `Content-Type: text/plain; charset=utf-8`,
-      ``,
-      body,
-    ].join('\r\n');
-  }
+  const options = { name: 'Youth Impact Taiwan' };
+  if (htmlBody) options.htmlBody = htmlBody;
 
-  const base64 = Utilities.base64EncodeWebSafe(mimeMessage);
-  const token  = ScriptApp.getOAuthToken();
+  const draft = GmailApp.createDraft(toEmail, replySubject, body, options);
 
-  const response = UrlFetchApp.fetch(
-    'https://gmail.googleapis.com/gmail/v1/users/me/drafts',
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      payload: JSON.stringify({ message: { threadId, raw: base64 } }),
-      muteHttpExceptions: true,
-    }
-  );
-
-  const data = JSON.parse(response.getContentText());
-  if (!data.id) {
-    throw new Error(`Failed to create draft: ${response.getContentText()}`);
-  }
-
-  console.log(`Draft created in thread ${threadId}, draft ID: ${data.id}`);
-  return data.id;
+  console.log(`Draft created → To: ${toEmail}, Subject: ${replySubject}, Draft ID: ${draft.getId()}`);
+  return draft.getId();
 }
