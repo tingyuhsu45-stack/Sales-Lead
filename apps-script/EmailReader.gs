@@ -87,15 +87,29 @@ function runEmailReader() {
       console.log(`  Intent: ${intent}`);
 
       if (intent === 'propose_time') {
-        // Sponsor is proposing their own meeting time → notify team
+        // Sponsor proposed their own specific time → notify Eric + Chanel immediately
         handleSponsorProposeTime_(companyName, fromEmail, body, cfg);
         sheetsUpdateCells(SHEET.LEADS, rowNum, [
           [COL.NOTES, '[Sponsor proposed time — notified Eric & Chanel]'],
+          [COL.STATUS, STATUS.REPLIED],
         ]);
         return;
       }
 
-      // Draft an AI reply using full thread history for context
+      if (intent === 'wants_meeting') {
+        // Sponsor is open to meeting → draft email with 3 time slots + notify Eric + Chanel
+        handleMeetingRequest_(threadId, fromEmail, subject, companyName, rowNum, cfg);
+        notifyMeetingInterest_(companyName, fromEmail, body, cfg);
+        sheetsUpdateCells(SHEET.LEADS, rowNum, [
+          [COL.DRAFT_CREATED, todayString()],
+          [COL.STATUS,        STATUS.DRAFT_CREATED],
+          [COL.NOTES,         '[Sponsor wants meeting — slots drafted, Eric & Chanel notified]'],
+        ]);
+        processed++;
+        return;
+      }
+
+      // General reply or decline → draft a contextual AI reply
       const draftBody = draftReply_(companyName, body, threadHistory, intent, cfg);
       gmailCreateReplyDraft(threadId, fromEmail, subject, draftBody);
 
@@ -103,11 +117,6 @@ function runEmailReader() {
         [COL.DRAFT_CREATED, todayString()],
         [COL.STATUS,        STATUS.DRAFT_CREATED],
       ]);
-
-      // If sponsor is open to a meeting, also append meeting slots to the draft
-      if (intent === 'wants_meeting') {
-        handleMeetingRequest_(threadId, fromEmail, subject, companyName, draftBody, rowNum, cfg);
-      }
 
       processed++;
     } catch (err) {
@@ -121,25 +130,51 @@ function runEmailReader() {
 // ── Intent classification ─────────────────────────────────────────────────────
 
 /**
- * Classify the sponsor's email intent.
+ * Classify the sponsor's email intent using the LLM.
  * Returns: 'wants_meeting' | 'propose_time' | 'general_reply' | 'decline'
+ *
+ * Falls back to keyword matching if the LLM call fails.
  */
 function classifyIntent_(body, cfg) {
+  // ── Try LLM classification first ──────────────────────────────────────────
+  try {
+    const system = `你是一個電子郵件分類助理。請閱讀以下贊助商的回覆郵件，並將其分類為以下四種之一：
+
+- wants_meeting：對方表示有興趣、想進一步了解、想安排會議、想視訊聊聊（但尚未提出具體時間）
+- propose_time：對方主動提出了具體的會議時間（例如「週三下午兩點」、「5/10 14:00」）
+- decline：對方明確拒絕或表示暫無興趣
+- general_reply：其他一般性回覆（提問、感謝、需要更多資料等）
+
+只輸出以上四個標籤之一，不要輸出任何其他文字。`;
+
+    const user = `請分類以下郵件：\n\n${body}`;
+
+    const result = llmComplete(system, user).trim().toLowerCase();
+
+    // Validate the result is one of the expected values
+    const valid = ['wants_meeting', 'propose_time', 'general_reply', 'decline'];
+    if (valid.includes(result)) {
+      console.log(`  Intent classified by AI: ${result}`);
+      return result;
+    }
+    console.warn(`  AI returned unexpected intent "${result}", falling back to keywords`);
+  } catch (err) {
+    console.warn(`  classifyIntent_ LLM failed: ${err} — using keyword fallback`);
+  }
+
+  // ── Keyword fallback ───────────────────────────────────────────────────────
   const lowerBody = body.toLowerCase();
 
-  // Sponsor is declining
-  const declineKeywords = ['不感興趣', '無法配合', '婉拒', '謝謝您的來信，但', '目前暫無贊助計畫'];
+  const declineKeywords = ['不感興趣', '無法配合', '婉拒', '謝謝您的來信，但', '目前暫無贊助計畫', 'not interested', 'no thank'];
   if (declineKeywords.some(kw => lowerBody.includes(kw))) return 'decline';
 
-  // Sponsor is proposing their own time slots
   const proposeKeywords = ['我這邊', '我方', '方便的時間', '可以約', '我可以', '這個時間'];
-  const timePatterns    = [/\d{1,2}[/:]\d{2}/, /上午|下午|早上|晚上/, /週[一二三四五六日]/];
+  const timePatterns    = [/\d{1,2}[/:]\d{2}/, /上午|下午|早上|晚上/, /週[一二三四五六日]/, /monday|tuesday|wednesday|thursday|friday/i];
   const hasPropose      = proposeKeywords.some(kw => lowerBody.includes(kw));
   const hasTime         = timePatterns.some(p => p.test(lowerBody));
   if (hasPropose && hasTime) return 'propose_time';
 
-  // Sponsor wants to schedule a meeting (asking us to propose times)
-  const meetingKeywords = ['安排會議', '約個時間', '視訊', 'zoom', 'meet', '進一步了解', '有興趣'];
+  const meetingKeywords = ['安排會議', '約個時間', '視訊', 'zoom', 'meet', '進一步了解', '有興趣', '想聊', '聊聊', 'schedule', 'call', 'interested'];
   if (meetingKeywords.some(kw => lowerBody.includes(kw))) return 'wants_meeting';
 
   return 'general_reply';
@@ -200,7 +235,7 @@ function handleSponsorProposeTime_(companyName, sponsorEmail, body, cfg) {
 
 // ── Sponsor open to a meeting — schedule and draft with slots ─────────────────
 
-function handleMeetingRequest_(threadId, sponsorEmail, subject, companyName, existingDraft, rowNum, cfg) {
+function handleMeetingRequest_(threadId, sponsorEmail, subject, companyName, rowNum, cfg) {
   try {
     const slots = calendarGetFreeSlots(3);
     if (!slots.length) {
@@ -248,6 +283,27 @@ function handleMeetingRequest_(threadId, sponsorEmail, subject, companyName, exi
   } catch (err) {
     console.error(`  handleMeetingRequest_ failed: ${err}`);
   }
+}
+
+// ── Notify team when sponsor wants a meeting ──────────────────────────────────
+
+function notifyMeetingInterest_(companyName, sponsorEmail, body, cfg) {
+  const subject = `[YIT] ${companyName} 有興趣會議 — 草稿已建立`;
+  const msgBody = [
+    `贊助商 ${companyName}（${sponsorEmail}）表示有興趣安排會議。`,
+    ``,
+    `系統已自動草擬含有 3 個時間選項的回覆，請至 Gmail 草稿夾確認後發送。`,
+    ``,
+    `--- 對方來信內容 ---`,
+    body,
+    `--------------------`,
+    ``,
+    `查看草稿：https://mail.google.com/mail/u/0/#drafts`,
+  ].join('\n');
+
+  gmailSend(cfg.NOTIFY_ERIC,   subject, msgBody);
+  gmailSend(cfg.NOTIFY_CHANEL, subject, msgBody);
+  console.log(`  Notified Eric + Chanel: ${companyName} wants a meeting`);
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
