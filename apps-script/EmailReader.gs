@@ -68,6 +68,9 @@ function runEmailReader() {
       const subject     = lastMsg.getSubject() || '';
       const body        = lastMsg.getPlainBody() || '';
 
+      // Build full thread history for AI context (all messages, oldest first)
+      const threadHistory = buildThreadHistory_(messages);
+
       console.log(`EmailReader: reply from ${companyName} <${fromEmail}>`);
 
       // Mark as read
@@ -92,8 +95,8 @@ function runEmailReader() {
         return;
       }
 
-      // Draft an AI reply in the thread
-      const draftBody = draftReply_(companyName, body, intent, cfg);
+      // Draft an AI reply using full thread history for context
+      const draftBody = draftReply_(companyName, body, threadHistory, intent, cfg);
       gmailCreateReplyDraft(threadId, fromEmail, subject, draftBody);
 
       sheetsUpdateCells(SHEET.LEADS, rowNum, [
@@ -144,23 +147,28 @@ function classifyIntent_(body, cfg) {
 
 // ── Reply drafting ────────────────────────────────────────────────────────────
 
-function draftReply_(companyName, incomingBody, intent, cfg) {
-  const yitContext = sheetsGetYITContext();
+function draftReply_(companyName, latestBody, threadHistory, intent, cfg) {
+  const yitContext   = sheetsGetYITContext();
   const systemPrompt = cfg.READER_SYSTEM_PROMPT.replace('{YIT_CONTEXT}', yitContext);
 
   const intentNote = {
-    'wants_meeting':  '（對方有興趣進一步了解/安排會議）',
-    'general_reply':  '（對方有一般性回覆）',
-    'decline':        '（對方婉拒，請禮貌回應感謝對方的時間）',
-    'propose_time':   '',
+    'wants_meeting': '（對方有興趣進一步了解/安排會議）',
+    'general_reply': '（對方有一般性回覆）',
+    'decline':       '（對方婉拒，請禮貌回應感謝對方的時間）',
+    'propose_time':  '',
   }[intent] || '';
 
   const userMsg = `
 公司名稱：${companyName}
-對方來信內容：
-${incomingBody}
 
-請用繁體中文撰寫一封回覆草稿 ${intentNote}。
+--- 完整對話紀錄（從最舊到最新）---
+${threadHistory}
+--- 對話紀錄結束 ---
+
+最新一封來信：
+${latestBody}
+
+請根據以上完整對話紀錄，用繁體中文撰寫一封回覆草稿 ${intentNote}。
 `.trim();
 
   try {
@@ -248,4 +256,34 @@ function handleMeetingRequest_(threadId, sponsorEmail, subject, companyName, exi
 function extractEmailFromHeader_(fromHeader) {
   const match = (fromHeader || '').match(/<([^>]+)>/);
   return match ? match[1].toLowerCase().trim() : (fromHeader || '').toLowerCase().trim();
+}
+
+/**
+ * Build a readable conversation history string from all messages in a thread.
+ * Oldest message first. Each message shows sender, date, and body.
+ * Capped at 8 messages to avoid exceeding LLM token limits.
+ */
+function buildThreadHistory_(messages) {
+  const MAX_MESSAGES = 8;
+  const MAX_BODY_CHARS = 800; // truncate very long emails
+
+  const recent = messages.length > MAX_MESSAGES
+    ? messages.slice(messages.length - MAX_MESSAGES)
+    : messages;
+
+  return recent.map((msg, i) => {
+    const from = msg.getFrom() || '(unknown)';
+    const date = Intl.DateTimeFormat('zh-TW', {
+      timeZone: 'Asia/Taipei',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(msg.getDate());
+
+    let body = (msg.getPlainBody() || '').trim();
+    if (body.length > MAX_BODY_CHARS) {
+      body = body.slice(0, MAX_BODY_CHARS) + '\n...(截略)';
+    }
+
+    return `[訊息 ${i + 1}] 寄件者：${from} | 時間：${date}\n${body}`;
+  }).join('\n\n---\n\n');
 }
