@@ -49,14 +49,23 @@ function searchCompanies_(cfg, knownEmails) {
     if (found.length >= cfg.WEEKLY_TARGET * 2) break;
     try {
       const results = tavilySearch(query, 10);
+      console.log(`  Query "${query.slice(0, 30)}..." → ${results.length} Tavily results`);
+
+      let parsedCount = 0;
       for (const r of results) {
         const record = parseResult_(r, cfg);
-        if (!record) continue;
+        if (!record) {
+          console.log(`    Skipped (no name extracted): ${r.url}`);
+          continue;
+        }
         if (seenNames.has(record.name)) continue;
         if (record.email && knownEmails.has(record.email.toLowerCase())) continue;
         found.push(record);
         seenNames.add(record.name);
+        parsedCount++;
+        console.log(`    Found: ${record.name} | ${record.email || 'no email'}`);
       }
+      console.log(`  → ${parsedCount} usable companies from this query`);
     } catch (err) {
       console.error(`Tavily search failed for "${query}": ${err}`);
     }
@@ -149,4 +158,41 @@ function sendApprovalEmail_(verified, needsReview, cfg) {
 
   gmailSend(cfg.USER_EMAIL, subject, lines.join('\n'));
   console.log(`CompanyFinder: approval email sent to ${cfg.USER_EMAIL}`);
+}
+
+// ── Diagnostic helpers (run manually from the editor) ─────────────────────────
+
+/**
+ * Run this first to check if Tavily is working and what it returns.
+ * Look at the Execution log for results.
+ */
+function testTavilySearch() {
+  const query = '台灣中型企業 企業社會責任 贊助 聯絡信箱 官方網站';
+  console.log(`Testing Tavily with query: "${query}"`);
+  const results = tavilySearch(query, 5);
+  console.log(`Got ${results.length} results:`);
+  results.forEach((r, i) => {
+    console.log(`\n[${i+1}] URL: ${r.url}`);
+    console.log(`    Content preview: ${(r.content || '').slice(0, 200)}`);
+  });
+}
+
+/**
+ * Run this to check if the LLM can extract company names from Tavily content.
+ * Look at the Execution log for extracted names.
+ */
+function testNameExtraction() {
+  const cfg = getConfig();
+  const query = '台灣中型企業 企業社會責任 贊助 聯絡信箱 官方網站';
+  const results = tavilySearch(query, 5);
+  console.log(`Testing name extraction on ${results.length} results:`);
+  results.forEach((r, i) => {
+    const content = (r.content || '') + ' ' + (r.url || '');
+    const nameAI    = extractTCCompanyNameAI_(content, cfg);
+    const nameRegex = extractTCCompanyName(content);
+    console.log(`[${i+1}] ${r.url}`);
+    console.log(`     AI name:    "${nameAI}"`);
+    console.log(`     Regex name: "${nameRegex}"`);
+    console.log(`     Email:      "${extractEmail(content)}"`);
+  });
 }
